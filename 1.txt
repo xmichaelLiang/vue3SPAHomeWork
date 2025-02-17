@@ -1,0 +1,46 @@
+ public static async Task<List<T>> ExecuteQueryAsync<T>(this IDbConnection connection, string sql, List<SqlParameter> parameters = null)
+        where T : new()
+    {
+        var results = new List<T>();
+
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+
+        // 設置參數
+        if (parameters != null)
+        {
+            foreach (var param in parameters)
+            {
+                var dbParam = command.CreateParameter();
+                dbParam.ParameterName = param.ParameterName;
+                dbParam.Value = param.Value ?? DBNull.Value;
+                dbParam.DbType = param.DbType;
+                command.Parameters.Add(dbParam);
+            }
+        }
+
+        using var reader = await command.ExecuteReaderAsync();
+        
+        // 獲取類型屬性
+        var properties = typeof(T).GetProperties(BindingFlags.Public | BindingFlags.Instance);
+
+        while (await reader.ReadAsync())
+        {
+            var item = new T();
+            for (int i = 0; i < reader.FieldCount; i++)
+            {
+                var columnName = reader.GetName(i);
+                var property = properties.FirstOrDefault(p => p.Name.Equals(columnName, StringComparison.OrdinalIgnoreCase));
+
+                if (property != null && !reader.IsDBNull(i))
+                {
+                    var value = reader.GetValue(i);
+                    property.SetValue(item, Convert.ChangeType(value, property.PropertyType));
+                }
+            }
+            results.Add(item);
+        }
+
+        return results;
+    }
+}
